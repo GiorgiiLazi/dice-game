@@ -15,29 +15,24 @@ class DiceGame {
         console.log("=== Collaborative Random Number Generation ===");
     
         // step 1: computer generates random number x
-        const x = Math.floor(Math.random() * Math.min(6, this.diceSet.length)); // Ограничиваем диапазон числом кубиков
-        console.log(`Computer's secret number (x): ${x}`);
+        const x = Math.floor(Math.random() * Math.min(6, this.diceSet.length));
     
-        //step 2: secret key generation
+        // step 2: secret key generation
         const secretKey = crypto.randomBytes(16).toString('hex');
     
-        //step 3: HMAC(x) calculation
+        // step 3: HMAC(x) calculation
         const hmac = crypto.createHmac('sha256', secretKey).update(x.toString()).digest('hex');
-        console.log(`HMAC of the computer's number: ${hmac}`);
+        // HMAC больше не выводится в консоль.
     
-        //step 4: user chosese y number
+        // step 4: user chooses y number
         const y = await this.getUserChoice();
     
-        //step 5: result calculation
-        const result = (x + y) % Math.min(6, this.diceSet.length); // using dice
+        // step 5: result calculation
+        const result = (x + y) % Math.min(6, this.diceSet.length);
     
-        //step 6: show result and secret key
-        console.log(`Result (x + y) % ${Math.min(6, this.diceSet.length)}: ${result}`);
-        console.log(`Secret key: ${secretKey}`);
-    
-        return result;
+        // step 6: return result
+        return { result, secretKey };
     }
-    
 
     async getUserChoice() {
         return new Promise((resolve) => {
@@ -63,35 +58,78 @@ class DiceGame {
     async play() {
         console.log("=== Welcome to the Generalized Dice Game ===");
     
-        // calculating index
-        const diceIndex = await this.collaborativeRandomNumber();
+        // calculating index and determining who selects first
+        const { result: diceIndex, secretKey } = await this.collaborativeRandomNumber();
     
-        // checking index
         if (diceIndex >= this.diceSet.length || diceIndex < 0) {
             console.log(`Invalid dice index generated: ${diceIndex}`);
             console.log("Please ensure there are enough dice configurations provided.");
             return;
         }
     
-        // choosing dice
-        const userDice = this.diceSet[diceIndex];
+        // Choosing who selects first
+        const firstPicker = diceIndex % 2 === 0 ? this.user : this.computer;
+        console.log(`${firstPicker.name} will select the dice first.`);
+    
+        let userDice, computerDice;
+
+        if (firstPicker === this.user) {
+            userDice = await this.selectDice();
+            console.log("Computer is choosing...");
+            computerDice = this.randomRemainingDice(userDice);
+        } else {
+            computerDice = this.randomDice();
+            console.log("Computer selected dice:");
+            this.displayDiceTable([computerDice]);
+            userDice = await this.selectDice(computerDice);
+        }
+    
         console.log("Your selected dice:");
         this.displayDiceTable([userDice]);
     
-        // user throw
+        // Rolls
         const userRoll = this.user.takeTurn(userDice);
-    
-        // computer chooses and throws
-        const computerDice = this.diceSet[Math.floor(Math.random() * this.diceSet.length)];
-        console.log("Computer selected dice:");
-        this.displayDiceTable([computerDice]);
-    
         const computerRoll = this.computer.takeTurn(computerDice);
     
-        // select the winner
+        // Select the winner
         this.determineWinner(userRoll, computerRoll);
     }
-    
+
+    async selectDice(excludedDice = null) {
+        console.log("Available dice:");
+        const availableDice = this.diceSet.filter(dice => dice !== excludedDice);
+        this.displayDiceTable(availableDice);
+
+        return new Promise((resolve) => {
+            const rl = readline.createInterface({
+                input: process.stdin,
+                output: process.stdout,
+            });
+
+            rl.question("Select a dice index: ", (input) => {
+                const choice = parseInt(input) - 1; // Adjusting for 0-based index
+                if (isNaN(choice) || choice < 0 || choice >= availableDice.length) {
+                    console.log("Invalid choice. Please select a valid dice index.");
+                    rl.close();
+                    resolve(this.selectDice(excludedDice));
+                } else {
+                    rl.close();
+                    resolve(availableDice[choice]);
+                }
+            });
+        });
+    }
+
+    randomDice() {
+        const index = Math.floor(Math.random() * this.diceSet.length);
+        return this.diceSet[index];
+    }
+
+    randomRemainingDice(excludedDice) {
+        const remainingDice = this.diceSet.filter(dice => dice !== excludedDice);
+        const index = Math.floor(Math.random() * remainingDice.length);
+        return remainingDice[index];
+    }
 
     displayDiceTable(diceArray) {
         const table = new AsciiTable('Dice Faces');
